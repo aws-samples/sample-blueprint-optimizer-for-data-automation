@@ -1,0 +1,102 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "Invoice document with nested customer and line items",
+    "class": "invoice",
+    "type": "object",
+    "definitions": {},
+    "properties": {
+        "invoice_number": {
+            "type": "string",
+            "inferenceType": "explicit",
+            "instruction": "Extract the invoice number"
+        },
+        "date": {
+            "type": "string",
+            "inferenceType": "explicit",
+            "instruction": "Extract the invoice date"
+        },
+        "customer": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "inferenceType": "explicit",
+                    "instruction": "Extract the full legal name of the customer or company from the invoice header"
+                },
+                "email": {
+                    "type": "string",
+                    "inferenceType": "explicit",
+                    "instruction": "Extract customer email address"
+                },
+                "address": {
+                    "type": "object",
+                    "properties": {
+                        "street": {
+                            "type": "string",
+                            "inferenceType": "explicit",
+                            "instruction": "Extract the complete street address including building number and street name"
+                        },
+                        "city": {
+                            "type": "string",
+                            "inferenceType": "explicit",
+                            "instruction": "Extract city name"
+                        },
+                        "state": {
+                            "type": "string",
+                            "inferenceType": "explicit",
+                            "instruction": "Extract state or province"
+                        },
+                        "zip_code": {
+                            "type": "string",
+                            "inferenceType": "explicit",
+                            "instruction": "Extract postal code"
+                        }
+                    }
+                }
+            }
+        },
+        "line_items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "inferenceType": "explicit",
+                        "instruction": "Extract detailed description of each product or service including model numbers if present"
+                    },
+                    "quantity": {
+                        "type": "number",
+                        "inferenceType": "explicit",
+                        "instruction": "Extract quantity"
+                    },
+                    "unit_price": {
+                        "type": "number",
+                        "inferenceType": "explicit",
+                        "instruction": "Extract the unit price for each item, ensuring to capture the correct currency format"
+                    },
+                    "total_price": {
+                        "type": "number",
+                        "inferenceType": "explicit",
+                        "instruction": "Extract total price for this line item"
+                    }
+                }
+            }
+        },
+        "subtotal": {
+            "type": "number",
+            "inferenceType": "explicit",
+            "instruction": "Extract subtotal amount"
+        },
+        "tax": {
+            "type": "number",
+            "inferenceType": "explicit",
+            "instruction": "Extract tax amount"
+        },
+        "total": {
+            "type": "number",
+            "inferenceType": "explicit",
+            "instruction": "Extract total amount"
+        }
+    }
+}
