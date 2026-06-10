@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 bucket and SageMaker notebook instance for data automation project
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt DataBucket.Arn
+              - !Sub ${DataBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  NotebookKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for SageMaker notebook encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource: '*'
+
+  NotebookExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SageMakerNotebookMinimal
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:CreatePresignedNotebookInstanceUrl
+                  - sagemaker:DescribeNotebookInstance
+                  - sagemaker:StartNotebookInstance
+                  - sagemaker:StopNotebookInstance
+                Resource: !Sub arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:notebook-instance/*
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/sagemaker/*
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                Resource:
+                  - !GetAtt DataBucket.Arn
+                  - !Sub ${DataBucket.Arn}/*
+        - PolicyName: BedrockDataAutomation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:CreateBlueprint
+                  - bedrock:GetBlueprint
+                  - bedrock:DeleteBlueprint
+                  - bedrock:InvokeBlueprintOptimizationAsync
+                  - bedrock:GetBlueprintOptimizationStatus
+                  - bedrock:CopyBlueprintStage
+                Resource: '*'
+        - PolicyName: STSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: '*'
+
+  NotebookLifecycleConfig:
+    Type: AWS::SageMaker::NotebookInstanceLifecycleConfig
+    Properties:
+      OnStart:
+        - Content:
+            Fn::Base64: !Sub |
+              #!/bin/bash
+              set -e
+              mkdir -p /home/ec2-user/SageMaker/sample_data/purchase_order
+
+              git clone --depth 1 https://github.com/aws-samples/sample-blueprint-optimizer-for-data-automation.git /tmp/workshop
+              cp /tmp/workshop/purchase-order-optimization-workshop.ipynb /home/ec2-user/SageMaker/
+              cp -r /tmp/workshop/sample_data/purchase_order/* /home/ec2-user/SageMaker/sample_data/purchase_order/
+              rm -rf /tmp/workshop
+
+              chown -R ec2-user:ec2-user /home/ec2-user/SageMaker
+
+              mkdir -p /home/ec2-user/.ipython/profile_default/startup
+              echo "import os; os.environ.setdefault('BDA_BUCKET', '${DataBucket}')" \
+                > /home/ec2-user/.ipython/profile_default/startup/00-env.py
+              chown -R ec2-user:ec2-user /home/ec2-user/.ipython
+
+  NotebookInstance:
+    Type: AWS::SageMaker::NotebookInstance
+    Properties:
+      InstanceType: ml.t3.medium
+      RoleArn: !GetAtt NotebookExecutionRole.Arn
+      KmsKeyId: !Ref NotebookKMSKey
+      LifecycleConfigName: !GetAtt NotebookLifecycleConfig.NotebookInstanceLifecycleConfigName
+      InstanceMetadataServiceConfiguration:
+        MinimumInstanceMetadataServiceVersion: '2'
+
+Outputs:
+  BucketName:
+    Value: !Ref DataBucket
+  NotebookInstanceName:
+    Value: !Ref NotebookInstance
